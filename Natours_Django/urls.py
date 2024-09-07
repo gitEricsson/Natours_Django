@@ -27,7 +27,12 @@ urlpatterns = [
     path('api/tours/', include('tours.urls')),
     path('api/bookings/', include('bookings.urls')),
     path('api/reviews/', include('reviews.urls')),
+    path('social_auth/', include(('social_auth.urls', 'social_auth'), namespace="social_auth")),
     # path('swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
     path('', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    path('api/api.json/', schema_view.without_ui(cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
 ]
+
+handler404 = 'utils.views.error_404'
+handler500 = 'utils.views.error_500'

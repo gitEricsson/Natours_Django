@@ -4,7 +4,15 @@ from django.contrib import  auth
 from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.encoding import smart_str, force_str, smart_bytes, DjangoUnicodeDecodeError
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.http import urlsafe_base64_decode
+from django.contrib.auth.hashers import check_password
+from rest_framework.fields import CurrentUserDefault
+from rest_framework_simplejwt.tokens import RefreshToken, TokenError
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = '__all__'
 
 class SignupSerializer(serializers.ModelSerializer):
     password = serializers.CharField(max_length=60, min_length=6, write_only=True)
@@ -18,7 +26,7 @@ class SignupSerializer(serializers.ModelSerializer):
         email = attrs.get('email', '')
         name = attrs.get('name', '')
         
-        if not name.isalnum():
+        if not name.replace(" ", "").isalnum():
             raise serializers.ValidationError('The name should only contain alphanumeric characters')
         return attrs
         
@@ -32,14 +40,22 @@ class EmailVerificationSerializer(serializers.ModelSerializer):
     token = serializers.CharField(max_length=555)
     
     class Meta:
-        model=User
-        fields=['token']
+        model = User
+        fields = ['token']
 
 class LoginSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(max_length=255, min_length=3) # not including read_only=True makes it a required field 
     password = serializers.CharField(max_length=68, min_length=6, write_only=True) 
     # username = serializers.CharField(max_length=255, min_length=3, read_only=True)
-    tokens = serializers.CharField(max_length=68, min_length=6, read_only=True)
+    tokens = serializers.SerializerMethodField()
+
+    def get_tokens(self, obj):
+        user = User.objects.get(email=obj['email'])
+
+        return {
+            'refresh': user.tokens()['refresh'],
+            'access': user.tokens()['access']
+        } # user.tokens()['access'] is same as user.tokens.get('access')
     
     class Meta:
         model = User
@@ -66,18 +82,14 @@ class LoginSerializer(serializers.ModelSerializer):
             'email': user.email,
             'tokens': user.tokens
         }
-        
-        return super().validate(attrs)
 
 class ForgotPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField(min_length=2)
 
-    # redirect_url = serializers.CharField(max_length=500, required=False)
-
     class Meta:
         fields = ['email']
 
-class UpdatePasswordSerializer(serializers.Serializer):
+class ResetPasswordSerializer(serializers.Serializer):
     password = serializers.CharField(
         min_length=6, max_length=68, write_only=True)
     token = serializers.CharField(
@@ -105,5 +117,54 @@ class UpdatePasswordSerializer(serializers.Serializer):
             return (user)
         except Exception as e:
             raise AuthenticationFailed('The reset link is invalid', 401)
-        return super().validate(attrs)
+
+class UpdatePasswordSerializer(serializers.Serializer):
+    password_current = serializers.CharField(
+        min_length=6, max_length=68, write_only=True, required=True)
+    password_new = serializers.CharField(
+        min_length=6, max_length=68, write_only=True, required=True)
+    password_new_confirm = serializers.CharField(
+        min_length=6, max_length=68, write_only=True, required=True)
+
+    class Meta:
+        fields = ['passwordCurrent', 'passwordNew', 'passwordNewConfirm']
+    
+    ## would work if we were validating only one field called password_current
+    # def validate_password_current(self, value):
+    #     user = self.context['request'].user
+    #     if not user.check_password(value):
+    #         raise serializers.ValidationError("Current password is incorrect")
+    #     return value
+    
+    def validate(self, attrs):
+            user = self.context['request'].user
+
+            # Validate current password
+            if not check_password(attrs['password_current'], user.password):
+                raise serializers.ValidationError({"password_current": "Current password is incorrect."})
+
+            # Validate new password confirmation
+            if attrs['password_new'] != attrs['password_new_confirm']:
+                raise serializers.ValidationError({"password_new_confirm": "New passwords do not match."})
+            
+            return attrs
+
+class LogoutSerializer(serializers.Serializer):
+    refresh = serializers.CharField()
+
+    default_error_message = {
+        'bad_token': ('Token is expired or invalid')
+    }
+
+    def validate(self, attrs):
+        self.token = attrs['refresh']
+        return attrs
+
+    def save(self, **kwargs):
+
+        try:
+            RefreshToken(self.token).blacklist()
+
+        except TokenError:
+            self.fail('bad_token')
 

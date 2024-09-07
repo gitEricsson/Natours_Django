@@ -1,10 +1,21 @@
 import os
+import threading
 
 from django.core.mail import EmailMessage, EmailMultiAlternatives
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+class EmailThread(threading.Thread):
+
+    def __init__(self, email):
+        self.email = email
+        threading.Thread.__init__(self)
+
+    def run(self):
+        self.email.send()
+
 
 class Util:
     @staticmethod
@@ -15,5 +26,5 @@ class Util:
         
     def send_email_brevo(data):
         msg = EmailMultiAlternatives(data['email_subject'], data['email_body'], "hello@ericsson.io", [data['to_email']])
-        # msg.attach_alternative("<html>html body</html>", "text/html")"
-        msg.send()
+        msg.attach_alternative(data['email_html'], "text/html")
+        EmailThread(msg).start()
