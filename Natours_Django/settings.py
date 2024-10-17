@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.gis',
     'rest_framework',
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
@@ -56,10 +57,10 @@ INSTALLED_APPS = [
     'tours',
     'bookings',
     'reviews',
+    'appointments',
     'social_auth',
     'drf_yasg',
     'anymail',
-
 ]
 
 SWAGGER_SETTINGS = {
@@ -85,8 +86,6 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': datetime.timedelta(days=1),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
-
-
 }
 
 MIDDLEWARE = [
@@ -133,10 +132,10 @@ if os.name == 'nt':
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE': 'django.contrib.gis.db.backends.postgis',
         'NAME': 'Natours_Django',
         'USER': 'postgres',
-        'PASSWORD': 'Prettywoman1414',
+        'PASSWORD': os.environ.get("DB_PASSWORD"),
         'HOST': 'localhost',
         'PORT': '5432',
     }

@@ -1,18 +1,20 @@
 from rest_framework import serializers
-from .models import User
+from .models import User, Token
 from django.contrib import  auth
 from rest_framework.exceptions import AuthenticationFailed
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.utils.encoding import smart_str, force_str, smart_bytes, DjangoUnicodeDecodeError
+from django.utils.encoding import force_str
 from django.utils.http import urlsafe_base64_decode
 from django.contrib.auth.hashers import check_password
-from rest_framework.fields import CurrentUserDefault
 from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = '__all__'
+        extra_kwargs = {
+            'password': {'write_only': True},
+        }
 
 class SignupSerializer(serializers.ModelSerializer):
     password = serializers.CharField(max_length=60, min_length=6, write_only=True)
@@ -43,10 +45,83 @@ class EmailVerificationSerializer(serializers.ModelSerializer):
         model = User
         fields = ['token']
 
+
+## For Login without confirmation
+# class LoginSerializer(serializers.ModelSerializer):
+#     email = serializers.EmailField(max_length=255, min_length=3) # not including read_only=True makes it a required field 
+#     password = serializers.CharField(max_length=68, min_length=6, write_only=True) 
+#     tokens = serializers.SerializerMethodField()
+
+#     def get_tokens(self, obj):
+#         user = User.objects.get(email=obj['email'])
+
+#         return {
+#             'refresh': user.tokens()['refresh'],
+#             'access': user.tokens()['access']
+#         } # user.tokens()['access'] is same as user.tokens.get('access')
+    
+#     class Meta:
+#         model = User
+#         fields = ['email', 'password', 'tokens']
+    
+    
+#     def validate(self, attrs):
+#         email = attrs.get('email', '')
+#         password = attrs.get('password', '')
+        
+#         user = auth.authenticate(email=email, password=password)
+        
+#         if not user:
+#             raise AuthenticationFailed('Invalid Login credentials, try again')
+        
+#         if not user.is_active:
+#             raise AuthenticationFailed('Account disabled, contact admin')
+        
+#         if not user.is_verified:
+#             raise AuthenticationFailed('Email is not verified')
+        
+    
+#         return {
+#             'email': user.email,
+#             'tokens': user.tokens
+#         }
+
 class LoginSerializer(serializers.ModelSerializer):
-    email = serializers.EmailField(max_length=255, min_length=3) # not including read_only=True makes it a required field 
-    password = serializers.CharField(max_length=68, min_length=6, write_only=True) 
-    # username = serializers.CharField(max_length=255, min_length=3, read_only=True)
+    email = serializers.EmailField(max_length=100, min_length=3) # not including read_only=True makes it a required field 
+    password = serializers.CharField(max_length=20, min_length=6, write_only=True) 
+
+    class Meta:
+        model = User
+        fields = ['email', 'password']
+    
+    
+    def validate(self, attrs):
+        email = attrs.get('email', '')
+        password = attrs.get('password', '')
+                
+        user = auth.authenticate(email=email, password=password)
+        
+        if not user:
+            raise AuthenticationFailed('Invalid Login credentials, try again', 401)
+        
+        if not user.is_active:
+            raise AuthenticationFailed('Account disabled, contact admin', 400)
+        
+        if not user.is_verified:
+            raise AuthenticationFailed('Email is not verified', 400)
+        
+        token, _ = Token.objects.get_or_create(user=user)
+        login_token = token.create_login_token()
+        
+        return {
+            'email': user.email,
+            'name': user.name,
+            'login_token': login_token
+        }
+
+class ConfirmLoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    login_token = serializers.CharField(max_length=6, min_length=6, write_only=True)
     tokens = serializers.SerializerMethodField()
 
     def get_tokens(self, obj):
@@ -57,31 +132,13 @@ class LoginSerializer(serializers.ModelSerializer):
             'access': user.tokens()['access']
         } # user.tokens()['access'] is same as user.tokens.get('access')
     
-    class Meta:
-        model = User
-        fields = ['email', 'password', 'tokens']
-    
-    
-    def validate(self, attrs):
-        email = attrs.get('email', '')
-        password = attrs.get('password', '')
-        
-        user = auth.authenticate(email=email, password=password)
-        
-        if not user:
-            raise AuthenticationFailed('Invalid Login credentials, try again')
-        
-        if not user.is_active:
-            raise AuthenticationFailed('Account disabled, contact admin')
-        
-        if not user.is_verified:
-            raise AuthenticationFailed('Email is not verified')
-        
-    
-        return {
-            'email': user.email,
-            'tokens': user.tokens
-        }
+
+    def validate_login_token(self, value):
+        if not value.isdigit():
+            raise serializers.ValidationError("Confirmation code must be numeric.")
+        return value
+
+
 
 class ForgotPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField(min_length=2)

@@ -1,123 +1,12 @@
-# # from rest_framework import viewsets, generics, permissions
-# # from .models import User
-# # from .serializers import UserSerializer
-
-# # from rest_framework.authtoken.serializers import AuthTokenSerializer
-# # from rest_framework.response import Response
-# # from django.contrib.auth import login
-
-# # class UserViewSet(viewsets.ModelViewSet):
-# #     queryset = User.objects.all()
-# #     serializer_class = UserSerializer
-
-# # class LoginAPI(KnoxLoginView):
-# #     permission_classes = (permissions.AllowAny,)
-
-# #     def post(self, request, format=None):
-# #         serializer = AuthTokenSerializer(data=request.data)
-# #         serializer.is_valid(raise_exception=True)
-# #         user = serializer.validated_data['user']
-# #         login(request, user)
-# #         return Response({
-# #             "user": UserSerializer(user).data,
-# #             "token": AuthToken.objects.create(user)[1]
-# #         })
-
-
-
-
-# from rest_framework import viewsets
-# from .models import User
-# from .serializers import UserSerializer
-# from rest_framework.permissions import IsAuthenticated
-# from rest_framework.authtoken.serializers import AuthTokenSerializer
-# from rest_framework.views import APIView
-# from rest_framework.response import Response
-# from rest_framework.permissions import AllowAny
-# from rest_framework import status
-# from rest_framework.parsers import MultiPartParser, FormParser
-
-# from rest_framework import viewsets
-# from rest_framework.decorators import action
-# from django.contrib.auth.tokens import default_token_generator
-# from django.core.mail import send_mail
-
-# class UserViewSet(viewsets.ModelViewSet):
-#     queryset = User.objects.all()
-#     serializer_class = UserSerializer
-#     permission_classes = [IsAuthenticated]
-#     parser_classes = (MultiPartParser, FormParser)
-
-#     @action(detail=False, methods=['post'])
-#     def signup(self, request):
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         user = serializer.save()
-#         token = default_token_generator.make_token(user)
-#         send_mail(
-#             'Confirm your email',
-#             f'Use this token to confirm your email: {token}',
-#             'from@example.com',
-#             [user.email],
-#         )
-#         return Response(serializer.data)
-
-#     @action(detail=False, methods=['post'])
-#     def confirm_signup(self, request):
-#         token = request.data.get('token')
-#         user = User.objects.get(email=request.data.get('email'))
-#         if default_token_generator.check_token(user, token):
-#             user.email_confirmed = True
-#             user.save()
-#             return Response({'status': 'Email confirmed'})
-#         return Response({'status': 'Invalid token'}, status=400)
-
-
-    
-# class SignupView(APIView):
-#     permission_classes = [AllowAny]
-
-#     def post(self, request):
-#         serializer = UserSerializer(data=request.data)
-#         if serializer.is_valid():
-#             user = serializer.save()
-#             token = AuthToken.objects.create(user)[1]
-#             return Response({
-#                 "user": UserSerializer(user).data,
-#                 "token": token
-#             }, status=status.HTTP_201_CREATED)
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-# class LoginView(APIView):
-#     permission_classes = [AllowAny]
-
-#     def post(self, request):
-#         serializer = AuthTokenSerializer(data=request.data)
-#         if serializer.is_valid(raise_exception=True):
-#             user = serializer.validated_data['user']
-#             token = AuthToken.objects.create(user)[1]
-#             return Response({
-#                 "user": UserSerializer(user).data,
-#                 "token": token
-#             })
-#         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-# class LogoutView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request):
-#         request.user.auth_token.delete()
-#         return Response(status=status.HTTP_204_NO_CONTENT)
-
-
 from django.shortcuts import render
 from rest_framework import generics, status, views, viewsets
-from .serializers import SignupSerializer, EmailVerificationSerializer, LoginSerializer, ForgotPasswordSerializer, ResetPasswordSerializer, UserSerializer, UpdatePasswordSerializer, LogoutSerializer
+from .serializers import SignupSerializer, EmailVerificationSerializer, LoginSerializer, ConfirmLoginSerializer, ForgotPasswordSerializer, ResetPasswordSerializer, UserSerializer, UpdatePasswordSerializer, LogoutSerializer
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken, OutstandingToken, BlacklistedToken
 from rest_framework.permissions import IsAuthenticated
-from .models import User
+from rest_framework.exceptions import AuthenticationFailed
+from .models import User, Token
 from .utils import Util
 from django.contrib.sites.shortcuts import get_current_site
 from django.urls import reverse
@@ -130,22 +19,26 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.encoding import smart_str, smart_bytes, DjangoUnicodeDecodeError
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.contrib.sites.shortcuts import get_current_site
+from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
-from .utils import Util
-from .permissions import IsAdmin
+from .utils import Util, AppError
+from .permissions import IsAdmin, IsOwnerOrAdmin
 
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = (IsAdmin, IsAuthenticated)
+    lookup_field = 'id'
+    permission_classes = [IsAuthenticated, IsAdmin]
     parser_classes = (MultiPartParser, FormParser)
+    
+    def get_object(self):
+        return super().get_object()
 
 class SignupView(generics.GenericAPIView):
     serializer_class = SignupSerializer
     parser_classes = (MultiPartParser, FormParser)
     renderer_classes = (UserRenderer,)
-
     
     def post(self, request):
         user = request.data
@@ -156,26 +49,30 @@ class SignupView(generics.GenericAPIView):
         user = User.objects.get(email=user_data['email'])
                 
         token = RefreshToken.for_user(user).access_token
-                
-        current_site = get_current_site(request).domain
-        relativeLink = reverse('email-verify') # retrieve url path
-        absurl = 'http://'+current_site+relativeLink+"?token="+str(token)
         
-        email_body = f"Hi {user.name}, Welcome to the Family. We're happy you signed up for Natours. \n Kindly visit this Link to verify your account: {absurl}. \n If you received this mail without signing up, please ignore it!`"
+        try:
+            current_site = get_current_site(request).domain
+            relativeLink = reverse('email-verify') # retrieve url path
+            absurl = 'http://'+current_site+relativeLink+"?token="+str(token)
+            
+            email_body = f"Hi {user.name}, Welcome to the Family. We're happy you signed up for Natours. \n Kindly visit this Link to verify your account: {absurl}. \n If you received this mail without signing up, please ignore it!`"
+            
+            email_html = f"""<p>Hi {user.name},</p>
+            <p>Welcome to the Family. We're happy you signed up for Natours.</p>
+            <p>Kindly visit this <a href="{absurl}" target="_blank">Link</a> to verify your account.</p>
+            <p>If you received this mail without signing up, please ignore it!</p>
+            """
+                    
+            # data={'email_body': email_body, 'to_email': user.email, 'email_subject':'Verify your email'}
+            data={'email_body': email_body, 'to_email': user.email, 'email_subject':'Welcome to Natours', 'email_html': email_html}
+                    
+            # Util.send_email_gmail(data)
+            Util.send_email_brevo(data)
+            
+            return Response ({'status': 'success', 'message': 'Confirmation Link sent to email!','data': user_data}, status=status.HTTP_201_CREATED)
         
-        email_html = f"""<p>Hi {user.name},</p>
-        <p>Welcome to the Family. We're happy you signed up for Natours.</p>
-        <p>Kindly visit this <a href="{absurl}" target="_blank">Link</a> to verify your account.</p>
-        <p>If you received this mail without signing up, please ignore it!</p>
-        """
-                
-        # data={'email_body': email_body, 'to_email': user.email, 'email_subject':'Verify your email'}
-        data={'email_body': email_body, 'to_email': user.email, 'email_subject':'Welcome to Natours', 'email_html': email_html}
-                
-        # Util.send_email_gmail(data)
-        Util.send_email_brevo(data)
-        
-        return Response ({'status': 'success', 'message': 'Confirmation Link sent to email!','data': user_data}, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            raise AppError('There was an error sending the email. Please Try again!', status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
 class VerifyEmail(views.APIView):
     serializer_class=EmailVerificationSerializer
@@ -201,12 +98,77 @@ class VerifyEmail(views.APIView):
         except jwt.exceptions.DecodeError as identifier:
             return Response({'error': 'Invalid Token'}, status=status.HTTP_400_BAD_REQUEST)
 
+
+## For Login without confirmation
+# class LoginView(generics.GenericAPIView):
+#     serializer_class=LoginSerializer
+#     def post(self, request):
+#         serializer = self.serializer_class(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+        
+#         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
 class LoginView(generics.GenericAPIView):
     serializer_class=LoginSerializer
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
         serializer.is_valid(raise_exception=True)
         
+        email = serializer.validated_data.get('email')
+        name = serializer.validated_data.get('name')
+        login_token = serializer.validated_data.get('login_token')
+
+        try:
+            email_body = f"Hi {name}, \n Your Natours Confirmation Code is: \n {login_token} \n If you received this mail without signing up, please ignore it!`"
+        
+            email_html = f"""<p>Hi {name},</p>
+            <p>Your Natours Confirmation Code is:</p>
+            <p>{login_token}</p>
+            <p>If you received this mail without signing up, please ignore it!</p>
+            """
+                    
+            data={'email_body': email_body, 'to_email': email, 'email_subject':'Confirm Login', 'email_html': email_html}
+                    
+            Util.send_email_brevo(data)
+            
+            return Response({
+                'status': 'success',
+                'message': 'Confirmation code sent to email!',
+                'data': {'email': email}
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            raise AppError('There was an error sending the email. Please Try again!', status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ConfirmLoginView(generics.GenericAPIView):
+    serializer_class= ConfirmLoginSerializer
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data['email']
+        login_token = serializer.validated_data['login_token']
+
+        try:
+            user = User.objects.get(email=email)
+        except ObjectDoesNotExist:
+            raise AuthenticationFailed('Invalid email')
+
+        try:
+            token = Token.objects.get(user=user)
+        except ObjectDoesNotExist:
+            raise AuthenticationFailed('Invalid token')
+
+        if token.login_token != login_token:
+            raise AppError('Invalid confirmation code', status_code=status.HTTP_400_BAD_REQUEST)
+
+        # Update the token
+        token.login_token = None
+        token.save()
+        
+        # Create and send token
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
@@ -219,23 +181,26 @@ class ForgotPassword(generics.GenericAPIView):
         email = request.data['email']
         
         if User.objects.filter(email=email).exists():
-            user = User.objects.get(email=email)
-            uidb64 = urlsafe_base64_encode(smart_bytes(user.id))
-            token = PasswordResetTokenGenerator().make_token(user)
-            current_site = get_current_site(
-                request=request).domain
-            relativeLink = reverse(
-                'password-reset-confirm', kwargs={'uidb64': uidb64, 'token': token})
+            try:
+                user = User.objects.get(email=email)
+                uidb64 = urlsafe_base64_encode(smart_bytes(user.id))
+                token = PasswordResetTokenGenerator().make_token(user)
+                current_site = get_current_site(
+                    request=request).domain
+                relativeLink = reverse(
+                    'password-reset-confirm', kwargs={'uidb64': uidb64, 'token': token})
 
-            absurl = 'http://'+current_site + relativeLink
-            email_body = 'Hello, \n Use link below to reset your password  \n' + absurl
-            data = {'email_body': email_body, 'to_email': user.email,
-                    'email_subject': 'Passsword Reset'}
+                absurl = 'http://'+current_site + relativeLink
+                email_body = 'Hello, \n Use link below to reset your password  \n' + absurl
+                data = {'email_body': email_body, 'to_email': user.email,
+                        'email_subject': 'Passsword Reset'}
+                
+                Util.send_email_brevo(data)
+
             
-            Util.send_email_brevo(data)
-
-        
-            return Response({'success': 'We have sent you a link to reset your password'}, status=status.HTTP_200_OK)
+                return Response({'success': 'We have sent you a link to reset your password'}, status=status.HTTP_200_OK)
+            except Exception as e:
+                raise AppError('There was an error sending the email. Please Try again!', status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         return Response({'failed': 'User does not exist'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -267,7 +232,6 @@ class UpdatePasswordAPIView(generics.GenericAPIView):
         
         # serializer = self.serializer_class(data=request.data, context={'user': request.user})
 
-        
         # Set the new password
         user = request.user
         user.set_password(serializer.validated_data['password_new'])
@@ -278,7 +242,7 @@ class UpdatePasswordAPIView(generics.GenericAPIView):
 class LogoutView(generics.GenericAPIView):
     serializer_class = LogoutSerializer
 
-    permission_classes = (IsAuthenticated,)
+    permission_classes = [IsAuthenticated,]
 
     def post(self, request):
 
@@ -286,4 +250,44 @@ class LogoutView(generics.GenericAPIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
 
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+class GetMeView(generics.GenericAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
+    
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
+
+class UpdateMeView(generics.GenericAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
+    
+    def patch(self, request):
+        if any(key in request.data for key in ('email', 'password', 'confirm_password', 'is_staff', 'is_superuser')):            
+            return Response({
+        'error': 'This route is not for password updates. Please use update-password.'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        serializer = UserSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'success': True, 'data': serializer.data}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class DeleteMeView(generics.GenericAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
+    
+    def delete(self, request):
+        user = request.user
+        
+        outstanding_tokens = OutstandingToken.objects.filter(user=user)
+        for token in outstanding_tokens:
+            BlacklistedToken.objects.get_or_create(token=token)
+        
+        user.is_active = False
+        user.save()
         return Response(status=status.HTTP_204_NO_CONTENT)

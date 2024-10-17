@@ -3,9 +3,14 @@ import threading
 
 from django.core.mail import EmailMessage, EmailMultiAlternatives
 from dotenv import load_dotenv
+from rest_framework.exceptions import APIException
 
-# Load environment variables from .env file
 load_dotenv()
+
+class AppError(APIException):
+    def __init__(self, detail, status_code):
+        self.status_code = status_code
+        super().__init__(detail)
 
 class EmailThread(threading.Thread):
 
