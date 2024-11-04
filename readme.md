@@ -38,12 +38,12 @@ Natours Django is a robust tour booking application built with Django and Docker
 ## 🛠️ Tech Stack
 
 - **Backend**: Django, Django REST Framework
-- **Database**: PostgreSQL with PostGIS extension
+- **Database**: PostgreSQL with PostGIS extension, RDS
 - **Containerization**: Docker
 - **Caching**: Redis
 - **Task Queue**: Celery
 - **Reverse Proxy**: Nginx
-- **Cloud Platform**: AWS
+- **Cloud Platform**: AWS (ECR & EC2)
 - **Continous Integration/Continous Deployment(CI/CD)**: CircleCI
 - **Authentication**: JWT
 
@@ -53,6 +53,9 @@ Natours Django is a robust tour booking application built with Django and Docker
 - Python 3.11+
 - PostgreSQL with PostGIS
 - GDAL library
+- AWS Account with appropriate permissions
+- AWS CLI installed and configured
+- Domain name (optional, but recommended for production)
 
 ## 📁 Project Structure
 
@@ -206,14 +209,60 @@ Docker Compose files:
 
 ## 🚀 Deployment
 
-For production deployment:
+For AWS production deployment:
 
 1. Update the `DJANGO_ALLOWED_HOSTS` in your `.env` file with your domain.
-2. Build and run the production containers:
+
+2. Build the Docker images:
+
+   ```bash
+   docker-compose -f docker-compose.staging.yml build
    ```
-   docker-compose -f docker-compose.prod.yml up --build -d
+
+3. Log in to AWS ECR repository:
+
+   ```bash
+   aws ecr get-login-password --region <aws-region> | docker login --username AWS --password-stdin <aws-account-id>.dkr.ecr.<aws-region>.amazonaws.com
    ```
-3. The application will be served by Nginx on port 80.
+
+4. Tag and Push images to ECR:
+
+   ```bash
+   docker tag natours-django_web:latest <aws-account-id>.dkr.ecr.<aws-region>.amazonaws.com/natours-django:web
+   docker tag natours-django_nginx:latest <aws-account-id>.dkr.ecr.<aws-region>.amazonaws.com/natours-django:nginx
+   docker push <aws-account-id>.dkr.ecr.<aws-region>.amazonaws.com/natours-django:web
+   docker push <aws-account-id>.dkr.ecr.<aws-region>.amazonaws.com/natours-django:nginx
+   ```
+
+5. On your EC2 instance, copy required files:
+
+   ```bash
+   scp -i /path/to/your/key.pem \
+       -r $(pwd)/{app,nginx,.env.staging,.env.staging.proxy-companion,docker-compose.staging.yml} \
+       ubuntu@<ec2-instance-ip>:/path/to/project
+   ```
+
+6. SSH into your EC2 instance:
+
+   ```bash
+   ssh -i /path/to/your/key.pem ubuntu@<ec2-instance-ip>
+   cd /path/to/project
+   ```
+
+7. Log in to ECR and pull images:
+
+   ```bash
+   aws ecr get-login-password --region <aws-region> | docker login --username AWS --password-stdin <aws-account-id>.dkr.ecr.<aws-region>.amazonaws.com
+   docker pull <aws-account-id>.dkr.ecr.<aws-region>.amazonaws.com/django-ec2:web
+   docker pull <aws-account-id>.dkr.ecr.<aws-region>.amazonaws.com/django-ec2:nginx-proxy
+   ```
+
+8. Run the containers:
+   ```bash
+   docker-compose -f docker-compose.staging.yml up -d
+   ```
+
+Note: When first accessing your domain, you may see a certificate security warning. This is expected if using a staging certificate. Click "Advanced" and then "Proceed" to access your application.
 
 ## 🤝 Contributing
 

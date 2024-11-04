@@ -5,41 +5,55 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.prod
+    image: <aws-account-id>.dkr.ecr.<aws-region>.amazonaws.com/django-ec2:web
     command: gunicorn Natours_Django.wsgi:application --bind 0.0.0.0:8000
     volumes:
-      - .:/home/app/web
       - static_volume:/home/app/web/staticfiles
       - media_volume:/home/app/web/mediafiles
     expose:
       - 8000
     env_file:
-      - .env
+      - .env.prod
     logging:
       options:
         max-size: '10m'
         max-file: '3'
-    depends_on:
-      - db
 
-  db:
-    image: postgis/postgis:13-3.1-alpine
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/
-    env_file:
-      - .env.db
-
-  nginx:
-    image: nginx:alpine
-    build: ./nginx
+  nginx-proxy:
+    container_name: nginx-proxy
+    build: nginx
+    image: <aws-account-id>.dkr.ecr.<aws-region>.amazonaws.com/django-ec2:nginx-proxy
+    restart: always
+    ports:
+      - 443:443
+      - '80:80'
     volumes:
       - static_volume:/home/app/web/staticfiles
       - media_volume:/home/app/web/mediafiles
-    ports:
-      - '80:80'
+      - certs:/etc/nginx/certs
+      - html:/usr/share/nginx/html
+      - vhost:/etc/nginx/vhost.d
+      - /var/run/docker.sock:/tmp/docker.sock:ro
     depends_on:
       - web
 
+  acme-companion:
+    image: nginxproxy/acme-companion
+    env_file:
+      - .env.prod
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - certs:/etc/nginx/certs
+      - html:/usr/share/nginx/html
+      - vhost:/etc/nginx/vhost.d
+      - acme:/etc/acme.sh
+    depends_on:
+      - nginx-proxy
+
 volumes:
-  postgres_data:
   static_volume:
   media_volume:
+  certs:
+  html:
+  vhost:
+  acme:
