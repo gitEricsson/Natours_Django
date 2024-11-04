@@ -1,5 +1,3 @@
-Here's a detailed README.md file for your Natours Django project:
-
 # Natours Django
 
 Natours Django is a robust tour booking application built with Django and Docker. It provides a comprehensive backend for managing tours, bookings, user accounts, and more.
