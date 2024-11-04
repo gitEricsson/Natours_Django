@@ -1,0 +1,83 @@
+# Builder Stage
+FROM python:3.11.4-slim-buster AS builder
+
+# Set work directory
+WORKDIR /usr/src/app
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# Install system dependencies and GDAL
+RUN apt-get update && apt-get install -y netcat \
+    gcc \
+    python3-dev \
+    postgresql-client \
+    libpq-dev \
+    gdal-bin \
+    libgdal-dev \
+    python3-gdal \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set GDAL environment variables
+ENV CPLUS_INCLUDE_PATH=/usr/include/gdal
+ENV C_INCLUDE_PATH=/usr/include/gdal
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --upgrade pip
+RUN pip wheel --no-cache-dir --no-deps --wheel-dir /usr/src/app/wheels -r requirements.txt
+
+# Final Stage
+FROM python:3.11.4-slim-buster
+
+# Create app user
+RUN addgroup --system app && adduser --system --group app
+
+# Create app directories
+ENV HOME=/home/app
+ENV APP_HOME=/home/app/web
+RUN mkdir -p $APP_HOME
+RUN mkdir $APP_HOME/staticfiles
+RUN mkdir $APP_HOME/mediafiles
+WORKDIR $APP_HOME
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    gdal-bin \
+    libgdal-dev \
+    python3-gdal \
+    netcat \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set GDAL environment variables
+ENV CPLUS_INCLUDE_PATH=/usr/include/gdal
+ENV C_INCLUDE_PATH=/usr/include/gdal
+
+# Install Python packages
+COPY --from=builder /usr/src/app/wheels /wheels
+COPY --from=builder /usr/src/app/requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir /wheels/*
+
+# Copy project files
+COPY . $APP_HOME
+
+# Ensure the dev-data directory has correct permissions
+RUN chown -R app:app $APP_HOME/dev-data
+
+# Copy and set entrypoint
+COPY ./entrypoint.prod.sh .
+RUN sed -i 's/\r$//g' $APP_HOME/entrypoint.prod.sh
+RUN chmod +x $APP_HOME/entrypoint.prod.sh
+
+# Set permissions
+RUN chown -R app:app $APP_HOME
+
+# Switch to app user
+USER app
+
+# Run entrypoint script
+ENTRYPOINT ["/home/app/web/entrypoint.prod.sh"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "Natours_Django.wsgi:application"]

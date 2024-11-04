@@ -1,4 +1,6 @@
-.env 
+.env
+.env.db
+.env.prod
 env
 env/ 
 .venv 
@@ -22,3 +24,5 @@ db.sqlite3
 /Natours_Django/__pycache__
 /bookings/__pycache__
 .vs/*
+/staticfiles
+/mediafiles

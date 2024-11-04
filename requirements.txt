@@ -15,12 +15,14 @@ drf-nested-routers==0.94.1
 drf-yasg==1.21.7
 facebook-sdk==3.1.0
 filelock==3.15.4
-GDAL @ file:///C:/Users/Ericsson%20Raphael/Desktop/Natours_Django/GDAL-3.8.4-cp312-cp312-win_amd64.whl#sha256=841c9569814fb5167e5b5652cf244f20a91051d1d6dd1ee97e72a0a9c0631d8c
+# GDAL @ ./GDAL-3.8.4-cp312-cp312-win_amd64.whl#sha256=841c9569814fb5167e5b5652cf244f20a91051d1d6dd1ee97e72a0a9c0631d8c
+# GDAL==3.6.4
 google-api-core==2.19.2
 google-api-python-client==2.144.0
 google-auth==2.34.0
 google-auth-httplib2==0.2.0
 googleapis-common-protos==1.65.0
+gunicorn==20.1.0
 httplib2==0.22.0
 idna==3.7
 inflection==0.5.1

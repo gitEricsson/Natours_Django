@@ -55,14 +55,34 @@ class SignupView(generics.GenericAPIView):
             relativeLink = reverse('email-verify') # retrieve url path
             absurl = 'http://'+current_site+relativeLink+"?token="+str(token)
             
-            email_body = f"Hi {user.name}, Welcome to the Family. We're happy you signed up for Natours. \n Kindly visit this Link to verify your account: {absurl}. \n If you received this mail without signing up, please ignore it!`"
+            email_body = f"Hi {user.name}, Welcome to the Natours Family! We're thrilled you've joined us. To complete your registration, please verify your account by clicking the following link: {absurl}. If you didn't sign up for Natours, please disregard this email."
             
-            email_html = f"""<p>Hi {user.name},</p>
-            <p>Welcome to the Family. We're happy you signed up for Natours.</p>
-            <p>Kindly visit this <a href="{absurl}" target="_blank">Link</a> to verify your account.</p>
-            <p>If you received this mail without signing up, please ignore it!</p>
+            email_html = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 5px; }}
+                    h1 {{ color: #4CAF50; }}
+                    .cta-button {{ display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>Welcome to Natours!</h1>
+                    <p>Hi {user.name},</p>
+                    <p>We're thrilled to have you join the Natours family. Your adventure begins here!</p>
+                    <p>To get started, please verify your account by clicking the button below:</p>
+                    <p><a href="{absurl}" class="cta-button" target="_blank">Verify Your Account</a></p>
+                    <p>If the button doesn't work, you can also copy and paste this link into your browser:</p>
+                    <p>{absurl}</p>
+                    <p>If you didn't sign up for Natours, please disregard this email.</p>
+                    <p>Happy exploring!</p>
+                    <p>The Natours Team</p>
+                </div>
+            </body>
+            </html>
             """
-                    
             # data={'email_body': email_body, 'to_email': user.email, 'email_subject':'Verify your email'}
             data={'email_body': email_body, 'to_email': user.email, 'email_subject':'Welcome to Natours', 'email_html': email_html}
                     
@@ -120,14 +140,40 @@ class LoginView(generics.GenericAPIView):
         login_token = serializer.validated_data.get('login_token')
 
         try:
-            email_body = f"Hi {name}, \n Your Natours Confirmation Code is: \n {login_token} \n If you received this mail without signing up, please ignore it!`"
-        
-            email_html = f"""<p>Hi {name},</p>
-            <p>Your Natours Confirmation Code is:</p>
-            <p>{login_token}</p>
-            <p>If you received this mail without signing up, please ignore it!</p>
+            email_body = f"""
+            Hi {name},
+
+            Welcome to Natours!
+            Your Confirmation Code is:
+
+            {login_token}
+
+            Please use this code to complete your login process.
+
+            If you didn't request this code, please ignore this email.
+
+            Best regards,
+            The Natours Team
             """
-                    
+        
+            email_html = f"""
+            <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 5px;">
+                    <h2 style="color: #4CAF50;">Welcome to Natours!</h2>
+                    <p>Hi {name},</p>
+                    <p>Your Natours Confirmation Code is:</p>
+                    <div style="background-color: #4CAF50; color: white; padding: 10px; text-align: center; font-size: 24px; border-radius: 3px;">
+                        {login_token}
+                    </div>
+                    <p>Please use this code to complete your login process.</p>
+                    <p style="font-style: italic; color: #777;">If you received this email without signing up, please ignore it.</p>
+                    <hr style="border: none; border-top: 1px solid #ddd;">
+                    <p style="font-size: 12px; color: #777;">This is an automated message, please do not reply.</p>
+                </div>
+            </body>
+            </html>
+            """
             data={'email_body': email_body, 'to_email': email, 'email_subject':'Confirm Login', 'email_html': email_html}
                     
             Util.send_email_brevo(data)
